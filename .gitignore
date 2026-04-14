@@ -1,0 +1,3 @@
+# Ignore compiled files bin/ *.class # Eclipse files (optional) .project .classpath
+.settings/
+
