@@ -1,111 +1,230 @@
 package game;
 
-import java.util.Scanner;
-
 import board.Board;
-import utils.ChessUtils;
+import pieces.King;
+import pieces.Piece;
 import utils.Position;
 
 /**
  * Controls the flow of the chess game.
  */
-public class Game {
-
+public class Game 
+{
     private final Board board;
     private String currentTurn;
-    private final Scanner scanner;
 
-    /**
-     * Constructs a new Game object.
-     */
-    public Game() {
+    // Constructs a new game with an initialized board and sets the starting turn to white.
+    public Game() 
+    {
         this.board = new Board();
+        this.board.initializeBoard();
         this.currentTurn = "white";
-        this.scanner = new Scanner(System.in);
     }
 
     /**
-     * Starts the game by initializing the board and entering the main play loop.
+     * Starts the game. In GUI mode, this initializes the game 
+     * state and waits for user interaction.
+     * Console loop from Phase 1 removed for GUI mode.
      */
-    public void start() {
-        board.initializeBoard();
-        play();
+    public void start() 
+    {
+        System.out.println("Game started in GUI mode.");
     }
 
     /**
-     * Main loop for the Phase 1 version of the game.
-     * Displays the board, asks for input, validates format,
-     * and performs very basic movement on the board.
+     * Attempts to move a piece from one position to another.
+     * Used by the GUI instead of console input.
      */
-    public void play() {
-        boolean running = true;
+    public boolean move(Position from, Position to) 
+    {
+        if (from == null || to == null) {
+            return false;
+        }
 
-        while (running) {
-            board.display();
-            System.out.println();
-            System.out.println("Current turn: " + currentTurn);
-            System.out.print("Enter move (example: E2 E4) or type EXIT to quit: ");
+        Piece piece = board.getPiece(from);
 
-            String input = scanner.nextLine().trim();
+        if (piece == null) {
+            return false;
+        }
 
-            if (input.equalsIgnoreCase("EXIT")) {
-                running = false;
-                end();
-                continue;
-            }
+        if (!piece.getColor().equalsIgnoreCase(currentTurn)) {
+            return false;
+        }
 
-            if (!ChessUtils.isValidMoveFormat(input)) {
-                System.out.println("Invalid format. Please use format like: E2 E4");
-                System.out.println();
-                continue;
-            }
+        boolean isLegal = false;
 
-            String[] parts = input.toUpperCase().split("\\s+");
-            Position from = ChessUtils.parsePosition(parts[0]);
-            Position to = ChessUtils.parsePosition(parts[1]);
-
-            if (from == null || to == null) {
-                System.out.println("Invalid board position.");
-                System.out.println();
-                continue;
-            }
-
-            if (board.getPiece(from) == null) {
-                System.out.println("There is no piece at " + parts[0] + ".");
-                System.out.println();
-                continue;
-            }
-
-            if (!board.getPiece(from).getColor().equalsIgnoreCase(currentTurn)) {
-                System.out.println("That piece does not belong to " + currentTurn + ".");
-                System.out.println();
-                continue;
-            }
-
-            if (board.movePiece(from, to)) {
-                switchTurn();
-            } else {
-                System.out.println("Move could not be completed.");
-                System.out.println();
+        for (Position p : piece.possibleMoves(board)) 
+        {
+            if (p.getRow() == to.getRow() &&
+                p.getColumn() == to.getColumn()) 
+            {
+                isLegal = true;
+                break;
             }
         }
+
+        if (!isLegal) 
+        {
+            return false;
+        }
+
+        boolean moved = board.movePiece(from, to);
+
+        if (moved) 
+        {
+            switchTurn();
+        }
+
+        return moved;
     }
 
-    /**
-     * Ends the game.
-     */
-    public void end() {
-        System.out.println("Game ended.");
+    // Placeholder check detection for future phases.
+    public boolean isCheck(String color)
+    {
+        Position kingPosition = findKing(color);
+        if (kingPosition == null) 
+        {
+            return false;
+        }
+
+        String opponent = color.equalsIgnoreCase("white") ? "black" : "white";
+        return isSquareAttacked(kingPosition, opponent);
     }
 
-    /**
-     * Switches the current turn between white and black.
-     */
-    private void switchTurn() {
+    // Placeholder checkmate detection for future phases.
+    public boolean isCheckmate(String color)
+    {
+        if (!isCheck(color)) 
+        {
+            return false;
+        }
+        return !hasAnyLegalMove(color);
+    }
+
+    // Finds the position of the king for the given color.
+    private Position findKing(String color)
+    {
+        for (int row = 0; row < 8; row++) 
+        {
+            for (int col = 0; col < 8; col++) 
+            {
+                Piece piece = board.getPiece(new Position(row, col));
+                if (piece instanceof King && piece.getColor().equalsIgnoreCase(color)) 
+                {
+                    return new Position(row, col);
+                }
+            }
+        }
+        return null;
+    }
+
+    // Checks if a given square is attacked by any piece of the specified color.
+    private boolean isSquareAttacked(Position square, String byColor)
+    {
+        for (int row = 0; row < 8; row++) 
+        {
+            for (int col = 0; col < 8; col++) 
+            {
+                Piece piece = board.getPiece(new Position(row, col));
+                if (piece == null || !piece.getColor().equalsIgnoreCase(byColor)) 
+                {
+                    continue;
+                }
+
+                for (Position move : piece.possibleMoves(board)) 
+                {
+                    if (move.getRow() == square.getRow() && move.getColumn() == square.getColumn()) 
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    // Checks if the given color has any legal moves available to escape check.
+    private boolean hasAnyLegalMove(String color)
+    {
+        for (int row = 0; row < 8; row++) 
+        {
+            for (int col = 0; col < 8; col++) 
+            {
+                Position from = new Position(row, col);
+                Piece piece = board.getPiece(from);
+
+                if (piece == null || !piece.getColor().equalsIgnoreCase(color)) 
+                {
+                    continue;
+                }
+
+                for (Position to : piece.possibleMoves(board)) 
+                {
+                    Piece destination = board.getPiece(to);
+
+                    if (destination != null &&
+                        destination.getColor().equalsIgnoreCase(color)) 
+                    {
+                        continue;
+                    }
+
+                    if (!wouldLeaveKingInCheck(from, to, color))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    // Simulates a move to check if it would leave the king in check, then reverts the move.
+    private boolean wouldLeaveKingInCheck(Position from, Position to, String color)
+    {
+        Piece movingPiece = board.getPiece(from);
+        Piece capturedPiece = board.getPiece(to);
+
+        if (movingPiece == null) 
+        {
+            return true;
+        }
+
+        board.movePiece(from, to);
+        boolean inCheck = isCheck(color);
+
+        board.movePiece(to, from);
+        if (capturedPiece != null) 
+        {
+            restoreCapturedPiece(to, capturedPiece);
+        }
+
+        return inCheck;
+    }
+
+    // Restores a captured piece back to the board after simulating a move.
+    private void restoreCapturedPiece(Position position, Piece piece)
+    {
+        board.setPiece(position, piece);
+    }
+
+    // Switches the current turn to the other player.
+    private void switchTurn() 
+    {
         if (currentTurn.equals("white")) {
             currentTurn = "black";
         } else {
             currentTurn = "white";
         }
+    }
+
+    // Getters for board and current turn, used by the GUI.
+    public Board getBoard() 
+    {
+        return board;
+    }
+
+    public String getCurrentTurn()
+    {
+        return currentTurn;
     }
 }
