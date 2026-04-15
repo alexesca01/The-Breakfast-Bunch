@@ -1,5 +1,11 @@
 package game;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
 import board.Board;
 import pieces.King;
 import pieces.Piece;
@@ -12,29 +18,31 @@ public class Game
 {
     private final Board board;
     private String currentTurn;
+    private final List<String> moveHistory;
+    private final List<String> stateHistory;
 
-    // Constructs a new game with an initialized board and sets the starting turn to white.
     public Game() 
     {
         this.board = new Board();
-        this.board.initializeBoard();
-        this.currentTurn = "white";
+        this.moveHistory = new ArrayList<>();
+        this.stateHistory = new ArrayList<>();
+        resetGame();
     }
 
-    /**
-     * Starts the game. In GUI mode, this initializes the game 
-     * state and waits for user interaction.
-     * Console loop from Phase 1 removed for GUI mode.
-     */
     public void start() 
     {
         System.out.println("Game started in GUI mode.");
     }
 
-    /**
-     * Attempts to move a piece from one position to another.
-     * Used by the GUI instead of console input.
-     */
+    public void resetGame()
+    {
+        this.board.initializeBoard();
+        this.currentTurn = "white";
+        this.moveHistory.clear();
+        this.stateHistory.clear();
+        this.stateHistory.add(exportFullState());
+    }
+
     public boolean move(Position from, Position to) 
     {
         if (from == null || to == null) {
@@ -68,17 +76,128 @@ public class Game
             return false;
         }
 
+        String snapshotBeforeMove = exportFullState();
+        Piece capturedPiece = board.getPiece(to);
         boolean moved = board.movePiece(from, to);
 
-        if (moved) 
+        if (!moved)
         {
-            switchTurn();
+            return false;
         }
 
-        return moved;
+        if (isCheck(piece.getColor()))
+        {
+            importFullState(snapshotBeforeMove);
+            return false;
+        }
+
+        String moveText = buildMoveText(piece, from, to, capturedPiece);
+        moveHistory.add(moveText);
+        stateHistory.add(exportFullState());
+        switchTurn();
+
+        return true;
     }
 
-    // Placeholder check detection for future phases.
+    private String buildMoveText(Piece piece, Position from, Position to, Piece capturedPiece)
+    {
+        StringBuilder builder = new StringBuilder();
+        builder.append(piece.getColor()).append(" ")
+               .append(piece.getClass().getSimpleName())
+               .append(" ")
+               .append(toCoordinate(from))
+               .append(" -> ")
+               .append(toCoordinate(to));
+
+        if (capturedPiece != null)
+        {
+            builder.append(" (captured ")
+                   .append(capturedPiece.getColor())
+                   .append(" ")
+                   .append(capturedPiece.getClass().getSimpleName())
+                   .append(")");
+        }
+        return builder.toString();
+    }
+
+    private String toCoordinate(Position position)
+    {
+        char file = (char) ('A' + position.getColumn());
+        int rank = 8 - position.getRow();
+        return "" + file + rank;
+    }
+
+    public boolean undoLastMove()
+    {
+        if (stateHistory.size() <= 1)
+        {
+            return false;
+        }
+
+        stateHistory.remove(stateHistory.size() - 1);
+        String previous = stateHistory.get(stateHistory.size() - 1);
+        importFullState(previous);
+
+        if (!moveHistory.isEmpty())
+        {
+            moveHistory.remove(moveHistory.size() - 1);
+        }
+
+        switchTurn();
+        return true;
+    }
+
+    public void saveGame(Path filePath) throws IOException
+    {
+        Files.writeString(filePath, exportFullState());
+    }
+
+    public void loadGame(Path filePath) throws IOException
+    {
+        String state = Files.readString(filePath);
+        importFullState(state);
+        stateHistory.clear();
+        moveHistory.clear();
+        stateHistory.add(exportFullState());
+    }
+
+    private String exportFullState()
+    {
+        StringBuilder builder = new StringBuilder();
+        builder.append("TURN=").append(currentTurn).append('\n');
+        for (String move : moveHistory)
+        {
+            builder.append("MOVE=").append(move).append('\n');
+        }
+        builder.append(board.exportBoardState());
+        return builder.toString();
+    }
+
+    private void importFullState(String fullState)
+    {
+        String[] lines = fullState.split("\\R");
+        currentTurn = "white";
+        moveHistory.clear();
+
+        StringBuilder boardState = new StringBuilder();
+        for (String line : lines)
+        {
+            if (line.startsWith("TURN="))
+            {
+                currentTurn = line.substring("TURN=".length()).trim();
+            }
+            else if (line.startsWith("MOVE="))
+            {
+                moveHistory.add(line.substring("MOVE=".length()));
+            }
+            else
+            {
+                boardState.append(line).append('\n');
+            }
+        }
+        board.importBoardState(boardState.toString());
+    }
+
     public boolean isCheck(String color)
     {
         Position kingPosition = findKing(color);
@@ -91,9 +210,12 @@ public class Game
         return isSquareAttacked(kingPosition, opponent);
     }
 
-    // Placeholder checkmate detection for future phases.
     public boolean isCheckmate(String color)
     {
+        if (!hasKing(color))
+        {
+            return true;
+        }
         if (!isCheck(color)) 
         {
             return false;
@@ -101,7 +223,24 @@ public class Game
         return !hasAnyLegalMove(color);
     }
 
-    // Finds the position of the king for the given color.
+    public boolean hasKing(String color)
+    {
+        return findKing(color) != null;
+    }
+
+    public String getWinnerIfAny()
+    {
+        if (!hasKing("white"))
+        {
+            return "black";
+        }
+        if (!hasKing("black"))
+        {
+            return "white";
+        }
+        return null;
+    }
+
     private Position findKing(String color)
     {
         for (int row = 0; row < 8; row++) 
@@ -118,7 +257,6 @@ public class Game
         return null;
     }
 
-    // Checks if a given square is attacked by any piece of the specified color.
     private boolean isSquareAttacked(Position square, String byColor)
     {
         for (int row = 0; row < 8; row++) 
@@ -143,7 +281,6 @@ public class Game
         return false;
     }
 
-    // Checks if the given color has any legal moves available to escape check.
     private boolean hasAnyLegalMove(String color)
     {
         for (int row = 0; row < 8; row++) 
@@ -178,36 +315,19 @@ public class Game
         return false;
     }
 
-    // Simulates a move to check if it would leave the king in check, then reverts the move.
     private boolean wouldLeaveKingInCheck(Position from, Position to, String color)
     {
-        Piece movingPiece = board.getPiece(from);
-        Piece capturedPiece = board.getPiece(to);
-
-        if (movingPiece == null) 
+        String snapshot = exportFullState();
+        boolean moved = board.movePiece(from, to);
+        boolean inCheck = true;
+        if (moved)
         {
-            return true;
+            inCheck = isCheck(color);
         }
-
-        board.movePiece(from, to);
-        boolean inCheck = isCheck(color);
-
-        board.movePiece(to, from);
-        if (capturedPiece != null) 
-        {
-            restoreCapturedPiece(to, capturedPiece);
-        }
-
+        importFullState(snapshot);
         return inCheck;
     }
 
-    // Restores a captured piece back to the board after simulating a move.
-    private void restoreCapturedPiece(Position position, Piece piece)
-    {
-        board.setPiece(position, piece);
-    }
-
-    // Switches the current turn to the other player.
     private void switchTurn() 
     {
         if (currentTurn.equals("white")) {
@@ -217,7 +337,6 @@ public class Game
         }
     }
 
-    // Getters for board and current turn, used by the GUI.
     public Board getBoard() 
     {
         return board;
@@ -226,5 +345,15 @@ public class Game
     public String getCurrentTurn()
     {
         return currentTurn;
+    }
+
+    public List<String> getMoveHistory()
+    {
+        return new ArrayList<>(moveHistory);
+    }
+
+    public String getCapturedPiecesText()
+    {
+        return board.getCapturedPieces();
     }
 }

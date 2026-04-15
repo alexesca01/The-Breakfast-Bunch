@@ -32,10 +32,26 @@ public class Board
      */
     public void initializeBoard() 
     {
+        clearBoard();
+        capturedPieces.setLength(0);
         initializeBlackPieces();
         initializeBlackPawns();
         initializeWhitePawns();
         initializeWhitePieces();
+    }
+
+    /**
+     * Clears the full board.
+     */
+    public void clearBoard()
+    {
+        for (int row = 0; row < 8; row++)
+        {
+            for (int col = 0; col < 8; col++)
+            {
+                grid[row][col] = null;
+            }
+        }
     }
 
     /**
@@ -70,7 +86,7 @@ public class Board
     private void initializeWhitePawns() 
     {
         for (int col = 0; col < 8; col++) 
-            {
+        {
             grid[6][col] = new Pawn("white", new Position(6, col));
         }
     }
@@ -102,12 +118,17 @@ public class Board
         {
             return null;
         }
-        return grid[position.getRow()][position.getColumn()];
+        int row = position.getRow();
+        int col = position.getColumn();
+        if (row < 0 || row > 7 || col < 0 || col > 7)
+        {
+            return null;
+        }
+        return grid[row][col];
     }
 
     /**
      * Moves a piece from one square to another.
-     * This Phase 1 version performs only basic movement and capture handling.
      *
      * @param from the source position
      * @param to the destination position
@@ -145,31 +166,114 @@ public class Board
         return true;
     }
 
-    /**
-     * Placeholder check detection for future phases.
-     *
-     * @param color the color to check
-     * @return false in this Phase 1 implementation
-     */
-    public boolean isCheck(String color) 
+    public void removeLastCapturedSymbol(String symbol)
     {
-        return false;
+        String token = symbol + " ";
+        int lastIndex = capturedPieces.lastIndexOf(token);
+        if (lastIndex >= 0)
+        {
+            capturedPieces.delete(lastIndex, lastIndex + token.length());
+        }
     }
 
-    /**
-     * Placeholder checkmate detection for future phases.
-     *
-     * @param color the color to check
-     * @return false in this Phase 1 implementation
-     */
-    public boolean isCheckmate(String color) 
+    public String getCapturedPieces()
     {
-        return false;
+        return capturedPieces.toString().trim();
+    }
+
+    public void setCapturedPieces(String captured)
+    {
+        capturedPieces.setLength(0);
+        if (captured != null && !captured.isBlank())
+        {
+            capturedPieces.append(captured.trim()).append(" ");
+        }
     }
 
     public void setPiece(Position position, Piece piece)
     {
+        if (position == null)
+        {
+            return;
+        }
         grid[position.getRow()][position.getColumn()] = piece;
+        if (piece != null)
+        {
+            piece.move(new Position(position.getRow(), position.getColumn()));
+        }
+    }
+
+    /**
+     * Serializes the board into a simple text format.
+     */
+    public String exportBoardState()
+    {
+        StringBuilder builder = new StringBuilder();
+        for (int row = 0; row < 8; row++)
+        {
+            for (int col = 0; col < 8; col++)
+            {
+                Piece piece = grid[row][col];
+                builder.append(piece == null ? "--" : piece.getSymbol());
+                if (col < 7)
+                {
+                    builder.append(',');
+                }
+            }
+            builder.append('\n');
+        }
+        builder.append("CAPTURED=").append(getCapturedPieces());
+        return builder.toString();
+    }
+
+    /**
+     * Restores the board from a saved text format.
+     */
+    public void importBoardState(String state)
+    {
+        clearBoard();
+        capturedPieces.setLength(0);
+
+        String[] lines = state.split("\\R");
+        for (int row = 0; row < 8 && row < lines.length; row++)
+        {
+            String[] tokens = lines[row].split(",");
+            for (int col = 0; col < 8 && col < tokens.length; col++)
+            {
+                String token = tokens[col].trim();
+                if (!"--".equals(token))
+                {
+                    grid[row][col] = createPieceFromSymbol(token, row, col);
+                }
+            }
+        }
+
+        for (String line : lines)
+        {
+            if (line.startsWith("CAPTURED="))
+            {
+                setCapturedPieces(line.substring("CAPTURED=".length()));
+                break;
+            }
+        }
+    }
+
+    private Piece createPieceFromSymbol(String symbol, int row, int col)
+    {
+        String color = Character.toLowerCase(symbol.charAt(0)) == 'w' ? "white" : "black";
+        char type = Character.toLowerCase(symbol.charAt(1));
+        Position position = new Position(row, col);
+
+        switch (type)
+        {
+            case 'p': return new Pawn(color, position);
+            case 'r': return new Rook(color, position);
+            case 'n': return new Knight(color, position);
+            case 'b': return new Bishop(color, position);
+            case 'q': return new Queen(color, position);
+            case 'k': return new King(color, position);
+            default: return null;
+        }
     }
 
     /**
@@ -177,33 +281,33 @@ public class Board
      */
     public void display() 
     {
-    System.out.println("    A   B   C   D   E   F   G   H");
-    System.out.println("  +---+---+---+---+---+---+---+---+");
+        System.out.println("    A   B   C   D   E   F   G   H");
+        System.out.println("  +---+---+---+---+---+---+---+---+");
 
-    for (int row = 0; row < 8; row++) 
-    {
-        System.out.print((8 - row) + " |");
-
-        for (int col = 0; col < 8; col++) 
+        for (int row = 0; row < 8; row++) 
         {
-            String content;
+            System.out.print((8 - row) + " |");
 
-            if (grid[row][col] == null) 
+            for (int col = 0; col < 8; col++) 
             {
-                content = ((row + col) % 2 == 0) ? "  " : "##";
-            } 
-            else 
-            {
-                content = grid[row][col].getSymbol();
+                String content;
+
+                if (grid[row][col] == null) 
+                {
+                    content = ((row + col) % 2 == 0) ? "  " : "##";
+                } 
+                else 
+                {
+                    content = grid[row][col].getSymbol();
+                }
+                System.out.print(String.format(" %2s|", content));
             }
-            System.out.print(String.format(" %2s|", content));
+
+            System.out.println(" " + (8 - row));
+            System.out.println("  +---+---+---+---+---+---+---+---+");
         }
 
-        System.out.println(" " + (8 - row));
-        System.out.println("  +---+---+---+---+---+---+---+---+");
-    }
-
-    System.out.println("    A   B   C   D   E   F   G   H");
-    System.out.println("Captured pieces: " + capturedPieces.toString());
+        System.out.println("    A   B   C   D   E   F   G   H");
+        System.out.println("Captured pieces: " + capturedPieces.toString());
     }
 }

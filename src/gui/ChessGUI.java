@@ -1,12 +1,27 @@
 package gui;
 
+import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
 
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 
 import game.Game;
 import pieces.Piece;
@@ -14,9 +29,12 @@ import utils.Position;
 
 public class ChessGUI extends JFrame 
 {
-    private Game game;
-
-    private JButton[][] squares = new JButton[8][8];
+    private final Game game;
+    private final JButton[][] squares = new JButton[8][8];
+    private final JPanel boardPanel = new JPanel(new GridLayout(8, 8));
+    private final JTextArea historyArea = new JTextArea();
+    private final JLabel capturedLabel = new JLabel("Captured: ");
+    private final JLabel turnLabel = new JLabel();
 
     private int selectedRow = -1;
     private int selectedCol = -1;
@@ -26,13 +44,78 @@ public class ChessGUI extends JFrame
         this.game = game;
 
         setTitle("Chess Game");
-        setSize(600, 600);
+        setSize(900, 650);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLayout(new GridLayout(8, 8));
-        initializeSquares();
-        refreshBoard();
+        setLayout(new BorderLayout());
 
+        createMenuBar();
+        initializeSquares();
+        add(boardPanel, BorderLayout.CENTER);
+        add(createSidePanel(), BorderLayout.EAST);
+
+        refreshBoard();
+        setLocationRelativeTo(null);
         setVisible(true);
+    }
+
+    private void createMenuBar()
+    {
+        JMenuBar menuBar = new JMenuBar();
+        JMenu gameMenu = new JMenu("Game");
+
+        JMenuItem newGameItem = new JMenuItem("New Game");
+        newGameItem.addActionListener(e -> {
+            game.resetGame();
+            selectedRow = -1;
+            selectedCol = -1;
+            refreshBoard();
+        });
+
+        JMenuItem saveGameItem = new JMenuItem("Save Game");
+        saveGameItem.addActionListener(e -> saveGame());
+
+        JMenuItem loadGameItem = new JMenuItem("Load Game");
+        loadGameItem.addActionListener(e -> loadGame());
+
+        gameMenu.add(newGameItem);
+        gameMenu.add(saveGameItem);
+        gameMenu.add(loadGameItem);
+        menuBar.add(gameMenu);
+        setJMenuBar(menuBar);
+    }
+
+    private JPanel createSidePanel()
+    {
+        JPanel sidePanel = new JPanel(new BorderLayout(10, 10));
+        sidePanel.setPreferredSize(new Dimension(250, 600));
+        sidePanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        historyArea.setEditable(false);
+        historyArea.setLineWrap(true);
+        historyArea.setWrapStyleWord(true);
+
+        JPanel topPanel = new JPanel(new GridLayout(0, 1, 5, 5));
+        JButton undoButton = new JButton("Undo");
+        undoButton.addActionListener(e -> {
+            if (game.undoLastMove())
+            {
+                selectedRow = -1;
+                selectedCol = -1;
+                refreshBoard();
+            }
+            else
+            {
+                JOptionPane.showMessageDialog(this, "No moves to undo.");
+            }
+        });
+
+        topPanel.add(turnLabel);
+        topPanel.add(capturedLabel);
+        topPanel.add(undoButton);
+
+        sidePanel.add(topPanel, BorderLayout.NORTH);
+        sidePanel.add(new JScrollPane(historyArea), BorderLayout.CENTER);
+        return sidePanel;
     }
 
     private void initializeSquares() 
@@ -43,36 +126,18 @@ public class ChessGUI extends JFrame
             {
                 JButton square = new JButton();
                 square.setFont(new Font("Segoe UI Symbol", Font.PLAIN, 32));
+                square.setFocusPainted(false);
+                square.setOpaque(true);
+                square.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
 
-                if ((row + col) % 2 == 0) 
-                {
-                    square.setBackground(Color.WHITE);
-                } 
-                else
-                {
-                    square.setBackground(Color.GRAY);
-                }
                 int r = row;
                 int c = col;
-
                 square.addActionListener(e -> handleClick(r, c));
 
                 squares[row][col] = square;
-                add(square);
+                boardPanel.add(square);
             }
         }   
-    }
-
-    // Updates the display of a single square after a move.
-    private void updateSquare(int row, int col) 
-    {
-        Position pos = new Position(row, col);
-        Piece piece = game.getBoard().getPiece(pos);
-
-        JButton button = squares[row][col];
-
-        button.setBackground((row + col) % 2 == 0 ? Color.WHITE : Color.GRAY);
-        button.setText(piece != null ? getUnicodePiece(piece) : "");
     }
 
     private void handleClick(int row, int col)
@@ -81,27 +146,35 @@ public class ChessGUI extends JFrame
         {
             selectedRow = row;
             selectedCol = col;
+            updateSelectionHighlight();
             return;
         }
 
         Position from = new Position(selectedRow, selectedCol);
         Position to = new Position(row, col);
-        
         Piece selectedPiece = game.getBoard().getPiece(from);
-         
+
         boolean moved = game.move(from, to);
 
         if (moved)
         {
-            String sideToTest = game.getCurrentTurn();
+            String winner = game.getWinnerIfAny();
+            if (winner != null)
+            {
+                refreshBoard();
+                JOptionPane.showMessageDialog(this, winner + " wins! The king was captured.");
+                return;
+            }
 
+            String sideToTest = game.getCurrentTurn();
             if (game.isCheck(sideToTest)) 
             {
                 if (game.isCheckmate(sideToTest)) 
                 {
-                    String winner = sideToTest.equalsIgnoreCase("white") ? "black" : "white";
-                    JOptionPane.showMessageDialog(this, winner + " wins!");
-                    System.exit(0);
+                    String actualWinner = sideToTest.equalsIgnoreCase("white") ? "black" : "white";
+                    refreshBoard();
+                    JOptionPane.showMessageDialog(this, actualWinner + " wins by checkmate!");
+                    return;
                 } 
                 else 
                 {
@@ -109,31 +182,25 @@ public class ChessGUI extends JFrame
                 }
             }
         }
-        
         else
         {
             if (selectedPiece == null)
             {
-                JOptionPane.showMessageDialog(this,"No piece at that square.");
+                JOptionPane.showMessageDialog(this, "No piece at that square.");
             }
             else if (!selectedPiece.getColor().equalsIgnoreCase(game.getCurrentTurn()))
             {
-                JOptionPane.showMessageDialog(this,"It's " + game.getCurrentTurn() + "'s turn!");
+                JOptionPane.showMessageDialog(this, "It's " + game.getCurrentTurn() + "'s turn!");
             }
             else
             {
-                JOptionPane.showMessageDialog(this,"That move is not allowed!");
+                JOptionPane.showMessageDialog(this, "That move is not allowed!");
             }
-
         }
-        int fromRow = selectedRow;
-        int fromCol = selectedCol;
 
         selectedRow = -1;
         selectedCol = -1;
-
-        updateSquare(fromRow, fromCol);
-        updateSquare(row, col);
+        refreshBoard();
     }
 
     private void refreshBoard()
@@ -144,50 +211,106 @@ public class ChessGUI extends JFrame
             {
                 Position pos = new Position(row, col);
                 Piece piece = game.getBoard().getPiece(pos);
-
                 JButton button = squares[row][col];
+                button.setBackground(getSquareColor(row, col));
+                button.setText(piece != null ? getUnicodePiece(piece) : "");
+            }
+        }
 
-                if ((row + col) % 2 == 0)
+        updateSelectionHighlight();
+        turnLabel.setText("Current turn: " + game.getCurrentTurn());
+        capturedLabel.setText("Captured: " + game.getCapturedPiecesText());
+
+        List<String> moves = game.getMoveHistory();
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < moves.size(); i++)
+        {
+            builder.append(i + 1).append(". ").append(moves.get(i)).append('\n');
+        }
+        historyArea.setText(builder.toString());
+    }
+
+    private void updateSelectionHighlight()
+    {
+        for (int row = 0; row < 8; row++)
+        {
+            for (int col = 0; col < 8; col++)
+            {
+                if (row == selectedRow && col == selectedCol)
                 {
-                    button.setBackground(Color.WHITE);
+                    squares[row][col].setBackground(Color.YELLOW);
                 }
                 else
                 {
-                    button.setBackground(Color.GRAY);
+                    squares[row][col].setBackground(getSquareColor(row, col));
                 }
+            }
+        }
+    }
 
-                if (piece != null)
-                {
-                    button.setText(getUnicodePiece(piece));
-                }
-                else
-                {
-                    button.setText("");
-                }
+    private Color getSquareColor(int row, int col)
+    {
+        return (row + col) % 2 == 0 ? Color.WHITE : Color.GRAY;
+    }
+
+    private void saveGame()
+    {
+        JFileChooser chooser = new JFileChooser();
+        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION)
+        {
+            File selectedFile = chooser.getSelectedFile();
+            try
+            {
+                game.saveGame(Path.of(selectedFile.getAbsolutePath()));
+                JOptionPane.showMessageDialog(this, "Game saved successfully.");
+            }
+            catch (IOException ex)
+            {
+                JOptionPane.showMessageDialog(this, "Unable to save game: " + ex.getMessage());
+            }
+        }
+    }
+
+    private void loadGame()
+    {
+        JFileChooser chooser = new JFileChooser();
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
+        {
+            File selectedFile = chooser.getSelectedFile();
+            try
+            {
+                game.loadGame(Path.of(selectedFile.getAbsolutePath()));
+                selectedRow = -1;
+                selectedCol = -1;
+                refreshBoard();
+                JOptionPane.showMessageDialog(this, "Game loaded successfully.");
+            }
+            catch (IOException ex)
+            {
+                JOptionPane.showMessageDialog(this, "Unable to load game: " + ex.getMessage());
             }
         }
     }
 
     private String getUnicodePiece(Piece piece)
     {
-        String color = piece.getColor();
         String symbol = piece.getSymbol().toLowerCase();
 
         switch (symbol)
         {
-            case "wp": return "\u2659"; // White Pawn
-            case "wr": return "\u2656"; // White Rook
-            case "wn": return "\u2658"; // White Knight
-            case "wb": return "\u2657"; // White Bishop
-            case "wq": return "\u2655"; // White Queen
-            case "wk": return "\u2654"; // White King
-            case "bp": return "\u265F"; // Black Pawn
-            case "br": return "\u265C"; // Black Rook
-            case "bn": return "\u265E"; // Black Knight
-            case "bb": return "\u265D"; // Black Bishop
-            case "bq": return "\u265B"; // Black Queen
-            case "bk": return "\u265A"; // Black King
+            case "wp": return "\u2659";
+            case "wr": return "\u2656";
+            case "wn": return "\u2658";
+            case "wb": return "\u2657";
+            case "wq": return "\u2655";
+            case "wk": return "\u2654";
+            case "bp": return "\u265F";
+            case "br": return "\u265C";
+            case "bn": return "\u265E";
+            case "bb": return "\u265D";
+            case "bq": return "\u265B";
+            case "bk": return "\u265A";
+            default: return "";
         }
-        return "";
     }
 }
